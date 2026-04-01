@@ -62,6 +62,13 @@ If you hit native build errors, run:
 npm run doctor
 ```
 
+### macOS Support Notes
+
+- Official macOS releases are published as separate Apple Silicon (`aarch64`) and Intel (`x86_64`) builds.
+- macOS Monterey is supported only when the system `WKWebView` runtime includes `Safari/WebKit 16.2+`.
+- Older Monterey WebKit builds are intentionally blocked at startup with an upgrade prompt instead of attempting a best-effort render.
+- Supported Monterey builds run in a stability-first mode with reduced transparency and glass effects disabled.
+
 ## Getting Started
 
 Install dependencies:
@@ -220,6 +227,13 @@ npm run tauri:build
 ```
 
 Artifacts will be in `src-tauri/target/release/bundle/` (platform-specific subfolders).
+
+The GitHub release workflow publishes separate macOS updater artifacts for:
+
+- `darwin-aarch64`
+- `darwin-x86_64`
+
+The generated `latest.json` includes both macOS platforms so in-app updates stay architecture-correct on Apple Silicon and Intel Macs.
 
 ### Windows (opt-in)
 

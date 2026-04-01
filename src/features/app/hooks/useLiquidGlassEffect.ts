@@ -9,10 +9,15 @@ import type { DebugEntry } from "../../../types";
 
 type Params = {
   reduceTransparency: boolean;
+  montereyCompatibilityMode?: boolean;
   onDebug?: (entry: DebugEntry) => void;
 };
 
-export function useLiquidGlassEffect({ reduceTransparency, onDebug }: Params) {
+export function useLiquidGlassEffect({
+  reduceTransparency,
+  montereyCompatibilityMode = false,
+  onDebug,
+}: Params) {
   const supportedRef = useRef<boolean | null>(null);
 
   useEffect(() => {
@@ -21,6 +26,11 @@ export function useLiquidGlassEffect({ reduceTransparency, onDebug }: Params) {
     const apply = async () => {
       try {
         const window = getCurrentWindow();
+        if (montereyCompatibilityMode) {
+          await window.setEffects({ effects: [] });
+          return;
+        }
+
         if (reduceTransparency) {
           if (supportedRef.current === null) {
             supportedRef.current = await isGlassSupported();
@@ -88,5 +98,5 @@ export function useLiquidGlassEffect({ reduceTransparency, onDebug }: Params) {
     return () => {
       cancelled = true;
     };
-  }, [onDebug, reduceTransparency]);
+  }, [montereyCompatibilityMode, onDebug, reduceTransparency]);
 }

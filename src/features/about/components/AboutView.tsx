@@ -1,12 +1,21 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import type { RuntimeCompatibility } from "@/types";
+import {
+  formatRuntimeCompatibilityLabel,
+  getCachedRuntimeCompatibility,
+  loadRuntimeCompatibility,
+} from "@app/runtimeCompatibility";
 
 const GITHUB_URL = "https://github.com/Dimillian/CodexMonitor";
 const TWITTER_URL = "https://x.com/dimillian";
 
 export function AboutView() {
   const [version, setVersion] = useState<string | null>(null);
+  const [runtimeCompatibility, setRuntimeCompatibility] = useState<RuntimeCompatibility | null>(
+    () => getCachedRuntimeCompatibility(),
+  );
 
   const handleOpenGitHub = () => {
     void openUrl(GITHUB_URL);
@@ -37,6 +46,35 @@ export function AboutView() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const cachedRuntimeCompatibility = getCachedRuntimeCompatibility();
+    if (cachedRuntimeCompatibility) {
+      setRuntimeCompatibility(cachedRuntimeCompatibility);
+      return () => {
+        active = false;
+      };
+    }
+
+    const fetchRuntimeCompatibility = async () => {
+      try {
+        const value = await loadRuntimeCompatibility();
+        if (active) {
+          setRuntimeCompatibility(value);
+        }
+      } catch {
+        if (active) {
+          setRuntimeCompatibility(null);
+        }
+      }
+    };
+
+    void fetchRuntimeCompatibility();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <div className="about">
       <div className="about-card">
@@ -51,6 +89,16 @@ export function AboutView() {
         <div className="about-version">
           {version ? `Version ${version}` : "Version —"}
         </div>
+        <div className="about-version">
+          {`Runtime ${formatRuntimeCompatibilityLabel(runtimeCompatibility)}`}
+        </div>
+        {runtimeCompatibility?.platform === "macos" && (
+          <div className="about-version">
+            {`macOS ${runtimeCompatibility.macosVersion ?? "unknown"} • WebKit ${
+              runtimeCompatibility.webkitVersion ?? "unknown"
+            }`}
+          </div>
+        )}
         <div className="about-tagline">
           Monitor the situation of your Codex agents
         </div>

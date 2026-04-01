@@ -23,6 +23,7 @@ mod menu;
 mod notifications;
 mod prompts;
 mod remote_backend;
+mod runtime_compatibility;
 mod rules;
 mod settings;
 mod shared;
@@ -183,6 +184,7 @@ pub fn run() {
             settings::get_app_settings,
             settings::update_app_settings,
             settings::get_codex_config_path,
+            runtime_compatibility::get_runtime_compatibility,
             files::file_read,
             files::file_write,
             files::read_image_as_data_url,

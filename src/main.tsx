@@ -1,7 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import * as Sentry from "@sentry/react";
-import App from "./App";
+import { UnsupportedRuntimeView } from "@app/bootstrap/UnsupportedRuntimeView";
+import { loadRuntimeCompatibility } from "@app/runtimeCompatibility";
 import { isMobilePlatform } from "./utils/platformPaths";
 
 const sentryDsn =
@@ -89,8 +90,38 @@ function syncMobileViewportHeight() {
 disableMobileZoomGestures();
 syncMobileViewportHeight();
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+async function bootstrap() {
+  const rootElement = document.getElementById("root");
+  if (!rootElement) {
+    throw new Error("Root element not found");
+  }
+
+  const root = ReactDOM.createRoot(rootElement);
+
+  let runtimeCompatibility = null;
+  try {
+    runtimeCompatibility = await loadRuntimeCompatibility();
+  } catch (error) {
+    console.warn("Failed to resolve runtime compatibility before app bootstrap.", {
+      error,
+    });
+  }
+
+  if (runtimeCompatibility && !runtimeCompatibility.supported) {
+    root.render(
+      <React.StrictMode>
+        <UnsupportedRuntimeView runtimeCompatibility={runtimeCompatibility} />
+      </React.StrictMode>,
+    );
+    return;
+  }
+
+  const { default: App } = await import("./App");
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}
+
+void bootstrap();

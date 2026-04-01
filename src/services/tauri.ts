@@ -8,6 +8,8 @@ import type {
   DictationModelStatus,
   DictationSessionState,
   LocalUsageSnapshot,
+  RuntimeCompatibility,
+  RuntimePlatform,
   TcpDaemonStatus,
   TailscaleDaemonCommandPreview,
   TailscaleStatus,
@@ -867,6 +869,64 @@ export async function getAppSettings(): Promise<AppSettings> {
 
 export async function isMobileRuntime(): Promise<boolean> {
   return invoke<boolean>("is_mobile_runtime");
+}
+
+function detectFallbackRuntimePlatform(): RuntimePlatform {
+  if (typeof navigator === "undefined") {
+    return "unknown";
+  }
+  const userAgent = (navigator.userAgent ?? "").toLowerCase();
+  const platform =
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+      ?.platform ??
+    navigator.platform ??
+    "";
+  const normalizedPlatform = platform.toLowerCase();
+
+  if (normalizedPlatform.includes("iphone") || userAgent.includes("iphone")) {
+    return "ios";
+  }
+  if (
+    normalizedPlatform.includes("ipad") ||
+    userAgent.includes("ipad") ||
+    (normalizedPlatform.includes("mac") &&
+      typeof navigator.maxTouchPoints === "number" &&
+      navigator.maxTouchPoints > 1 &&
+      userAgent.includes("like mac os x"))
+  ) {
+    return "ios";
+  }
+  if (normalizedPlatform.includes("android") || userAgent.includes("android")) {
+    return "android";
+  }
+  if (normalizedPlatform.includes("mac")) {
+    return "macos";
+  }
+  if (normalizedPlatform.includes("win")) {
+    return "windows";
+  }
+  if (normalizedPlatform.includes("linux") || userAgent.includes("linux")) {
+    return "linux";
+  }
+  return "unknown";
+}
+
+export async function getRuntimeCompatibility(): Promise<RuntimeCompatibility> {
+  try {
+    return await invoke<RuntimeCompatibility>("get_runtime_compatibility");
+  } catch (error) {
+    if (isMissingTauriInvokeError(error)) {
+      return {
+        platform: detectFallbackRuntimePlatform(),
+        macosVersion: null,
+        webkitVersion: null,
+        supported: true,
+        reason: "supported",
+        forceReducedTransparency: false,
+      };
+    }
+    throw error;
+  }
 }
 
 export async function updateAppSettings(settings: AppSettings): Promise<AppSettings> {

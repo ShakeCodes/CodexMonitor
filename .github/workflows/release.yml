@@ -9,8 +9,19 @@ permissions:
 
 jobs:
   build_macos:
-    runs-on: macos-latest
+    name: macOS bundles (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: aarch64
+            expected_binary_arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+            expected_binary_arch: x86_64
     env:
       CODESIGN_IDENTITY: ${{ vars.CODESIGN_IDENTITY }}
       NOTARY_PROFILE_NAME: ${{ vars.NOTARY_PROFILE_NAME }}
@@ -39,7 +50,7 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Install CMake
-        run: brew install cmake
+        run: command -v cmake >/dev/null 2>&1 || brew install cmake
 
       - name: Install dependencies
         run: npm ci
@@ -102,14 +113,37 @@ jobs:
           CODESIGN_IDENTITY="$CODESIGN_IDENTITY" \
             scripts/macos-fix-openssl.sh
 
+      - name: Validate bundled macOS architecture
+        run: |
+          set -euo pipefail
+          APP_ROOT="src-tauri/target/release/bundle/macos/Codex Monitor.app/Contents"
+
+          check_arch() {
+            local path="$1"
+            local expected="$2"
+            local info
+            info="$(file "$path")"
+            echo "$info"
+            if [[ "$info" != *"$expected"* ]]; then
+              echo "Expected $path to contain architecture $expected"
+              exit 1
+            fi
+          }
+
+          check_arch "$APP_ROOT/MacOS/codex-monitor" "${{ matrix.expected_binary_arch }}"
+          check_arch "$APP_ROOT/MacOS/codex_monitor_daemon" "${{ matrix.expected_binary_arch }}"
+          check_arch "$APP_ROOT/MacOS/codex_monitor_daemonctl" "${{ matrix.expected_binary_arch }}"
+          check_arch "$APP_ROOT/Frameworks/libssl.3.dylib" "${{ matrix.expected_binary_arch }}"
+          check_arch "$APP_ROOT/Frameworks/libcrypto.3.dylib" "${{ matrix.expected_binary_arch }}"
+
       - name: Notarize and staple
         run: |
           set -euo pipefail
           ditto -c -k --keepParent \
             "src-tauri/target/release/bundle/macos/Codex Monitor.app" \
-            CodexMonitor.zip
+            "CodexMonitor_${{ matrix.arch }}.zip"
 
-          xcrun notarytool submit CodexMonitor.zip \
+          xcrun notarytool submit "CodexMonitor_${{ matrix.arch }}.zip" \
             --keychain-profile "$NOTARY_PROFILE_NAME" \
             --wait
 
@@ -119,6 +153,7 @@ jobs:
       - name: Package artifacts
         run: |
           set -euo pipefail
+          ARCH="${{ matrix.arch }}"
           VERSION=$(python3 - <<'PY'
           import json
           from pathlib import Path
@@ -127,6 +162,10 @@ jobs:
           print(data["version"])
           PY
           )
+          ZIP_NAME="CodexMonitor_${VERSION}_${ARCH}.zip"
+          DMG_NAME="CodexMonitor_${VERSION}_${ARCH}.dmg"
+          APP_TAR_NAME="CodexMonitor_${VERSION}_${ARCH}.app.tar.gz"
+          APP_TAR_SIG_NAME="${APP_TAR_NAME}.sig"
 
           mkdir -p release-artifacts release-artifacts/dmg-root
           rm -rf "release-artifacts/dmg-root/Codex Monitor.app"
@@ -135,12 +174,12 @@ jobs:
 
           ditto -c -k --keepParent \
             "src-tauri/target/release/bundle/macos/Codex Monitor.app" \
-            release-artifacts/CodexMonitor.zip
+            "release-artifacts/${ZIP_NAME}"
 
           hdiutil create -volname "Codex Monitor" \
             -srcfolder release-artifacts/dmg-root \
             -ov -format UDZO \
-            release-artifacts/CodexMonitor_${VERSION}_aarch64.dmg
+            "release-artifacts/${DMG_NAME}"
 
           COPYFILE_DISABLE=1 tar -czf \
             "src-tauri/target/release/bundle/macos/Codex Monitor.app.tar.gz" \
@@ -152,19 +191,19 @@ jobs:
             "src-tauri/target/release/bundle/macos/Codex Monitor.app.tar.gz"
 
           cp "src-tauri/target/release/bundle/macos/Codex Monitor.app.tar.gz" \
-            release-artifacts/CodexMonitor.app.tar.gz
+            "release-artifacts/${APP_TAR_NAME}"
           cp "src-tauri/target/release/bundle/macos/Codex Monitor.app.tar.gz.sig" \
-            release-artifacts/CodexMonitor.app.tar.gz.sig
+            "release-artifacts/${APP_TAR_SIG_NAME}"
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-artifacts
+          name: macos-artifacts-${{ matrix.arch }}
           path: |
-            release-artifacts/CodexMonitor.zip
-            release-artifacts/CodexMonitor_*_aarch64.dmg
-            release-artifacts/CodexMonitor.app.tar.gz
-            release-artifacts/CodexMonitor.app.tar.gz.sig
+            release-artifacts/CodexMonitor_*_${{ matrix.arch }}.zip
+            release-artifacts/CodexMonitor_*_${{ matrix.arch }}.dmg
+            release-artifacts/CodexMonitor_*_${{ matrix.arch }}.app.tar.gz
+            release-artifacts/CodexMonitor_*_${{ matrix.arch }}.app.tar.gz.sig
 
   build_linux:
     name: linux bundles (${{ matrix.arch }})
@@ -323,8 +362,9 @@ jobs:
       - name: Download macOS artifacts
         uses: actions/download-artifact@v4
         with:
-          name: macos-artifacts
+          pattern: macos-artifacts-*
           path: release-artifacts
+          merge-multiple: true
 
       - name: Download Linux bundles
         uses: actions/download-artifact@v4
@@ -386,7 +426,6 @@ jobs:
           PY
           )
 
-          SIGNATURE=$(cat release-artifacts/CodexMonitor.app.tar.gz.sig)
           LAST_TAG=$(git tag --sort=-version:refname \
             | grep -v "^v${VERSION}$" \
             | head -n 1 || true)
@@ -446,18 +485,7 @@ jobs:
           def release_url(filename):
             return f"https://github.com/Dimillian/CodexMonitor/releases/download/v${VERSION}/{quote(filename)}"
 
-          platforms = {
-            "darwin-aarch64": {
-              "url": release_url("CodexMonitor.app.tar.gz"),
-              "signature": "${SIGNATURE}",
-            }
-          }
-
-          appimages = list(artifacts_dir.rglob("*.AppImage.tar.gz"))
-          if not appimages:
-            appimages = list(artifacts_dir.rglob("*.AppImage"))
-          if not appimages:
-            raise SystemExit("No AppImage artifacts found for latest.json")
+          platforms = {}
 
           def detect_arch(name):
             lowered = name.lower()
@@ -466,6 +494,33 @@ jobs:
             if "x86_64" in lowered or "amd64" in lowered:
               return "x86_64"
             return None
+
+          macos_updates = sorted(artifacts_dir.rglob("CodexMonitor_*.app.tar.gz"))
+          macos_arches = set()
+          for macos_update in macos_updates:
+            arch = detect_arch(macos_update.name)
+            if not arch:
+              continue
+            sig_path = Path(f"{macos_update}.sig")
+            if not sig_path.exists():
+              raise SystemExit(f"Missing signature for {macos_update.name}")
+            platforms[f"darwin-{arch}"] = {
+              "url": release_url(macos_update.name),
+              "signature": sig_path.read_text().strip(),
+            }
+            macos_arches.add(arch)
+
+          missing_macos_arches = {"aarch64", "x86_64"} - macos_arches
+          if missing_macos_arches:
+            raise SystemExit(
+              f"Missing macOS updater artifacts for: {', '.join(sorted(missing_macos_arches))}"
+            )
+
+          appimages = list(artifacts_dir.rglob("*.AppImage.tar.gz"))
+          if not appimages:
+            appimages = list(artifacts_dir.rglob("*.AppImage"))
+          if not appimages:
+            raise SystemExit("No AppImage artifacts found for latest.json")
 
           for appimage in appimages:
             arch = detect_arch(appimage.name)
@@ -565,9 +620,28 @@ jobs:
 
           shopt -s nullglob globstar
           appimages=(release-artifacts/**/*.AppImage*)
+          mapfile -t macos_zips < <(find release-artifacts -type f \( -name 'CodexMonitor_*_aarch64.zip' -o -name 'CodexMonitor_*_x86_64.zip' \) | sort)
+          mapfile -t macos_dmgs < <(find release-artifacts -type f \( -name 'CodexMonitor_*_aarch64.dmg' -o -name 'CodexMonitor_*_x86_64.dmg' \) | sort)
+          mapfile -t macos_updates < <(find release-artifacts -type f \( -name 'CodexMonitor_*_aarch64.app.tar.gz' -o -name 'CodexMonitor_*_x86_64.app.tar.gz' \) | sort)
+          mapfile -t macos_update_sigs < <(find release-artifacts -type f \( -name 'CodexMonitor_*_aarch64.app.tar.gz.sig' -o -name 'CodexMonitor_*_x86_64.app.tar.gz.sig' \) | sort)
           mapfile -t rpms < <(find release-artifacts -type f -name '*.rpm' | sort)
           mapfile -t windows_exes < <(find release-artifacts -type f -name '*.exe*' | sort)
           mapfile -t windows_msis < <(find release-artifacts -type f -name '*.msi*' | sort)
+          if [ ${#macos_zips[@]} -lt 2 ]; then
+            echo "Expected both macOS zip artifacts for release upload"
+            find release-artifacts -type f | sort
+            exit 1
+          fi
+          if [ ${#macos_dmgs[@]} -lt 2 ]; then
+            echo "Expected both macOS DMG artifacts for release upload"
+            find release-artifacts -type f | sort
+            exit 1
+          fi
+          if [ ${#macos_updates[@]} -lt 2 ] || [ ${#macos_update_sigs[@]} -lt 2 ]; then
+            echo "Expected both macOS updater artifacts and signatures for release upload"
+            find release-artifacts -type f | sort
+            exit 1
+          fi
           if [ ${#rpms[@]} -eq 0 ]; then
             echo "No RPM artifacts found for release upload"
             find release-artifacts -type f | sort
@@ -588,10 +662,10 @@ jobs:
             --title "v${VERSION}" \
             --notes-file release-artifacts/release-notes.md \
             --target "$GITHUB_SHA" \
-            release-artifacts/CodexMonitor.zip \
-            release-artifacts/CodexMonitor_*_aarch64.dmg \
-            release-artifacts/CodexMonitor.app.tar.gz \
-            release-artifacts/CodexMonitor.app.tar.gz.sig \
+            "${macos_zips[@]}" \
+            "${macos_dmgs[@]}" \
+            "${macos_updates[@]}" \
+            "${macos_update_sigs[@]}" \
             "${appimages[@]}" \
             "${rpms[@]}" \
             "${windows_exes[@]}" \

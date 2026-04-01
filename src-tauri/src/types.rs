@@ -189,6 +189,27 @@ pub(crate) struct LocalUsageSnapshot {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+pub(crate) enum RuntimeCompatibilityReason {
+    UnsupportedMontereyWebkit,
+    SupportedMontereyCompatMode,
+    Supported,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RuntimeCompatibility {
+    pub(crate) platform: String,
+    #[serde(default)]
+    pub(crate) macos_version: Option<String>,
+    #[serde(default)]
+    pub(crate) webkit_version: Option<String>,
+    pub(crate) supported: bool,
+    pub(crate) reason: RuntimeCompatibilityReason,
+    pub(crate) force_reduced_transparency: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum TcpDaemonState {
     Stopped,
     Running,

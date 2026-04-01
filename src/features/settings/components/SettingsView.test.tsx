@@ -21,6 +21,10 @@ import {
   getModelList,
   listWorkspaces,
 } from "@services/tauri";
+import {
+  getCachedRuntimeCompatibility,
+  loadRuntimeCompatibility,
+} from "@app/runtimeCompatibility";
 import { DEFAULT_COMMIT_MESSAGE_PROMPT } from "@utils/commitMessagePrompt";
 import { SettingsView } from "./SettingsView";
 
@@ -46,6 +50,24 @@ vi.mock("@services/tauri", async () => {
   };
 });
 
+vi.mock("@app/runtimeCompatibility", () => ({
+  getCachedRuntimeCompatibility: vi.fn(),
+  loadRuntimeCompatibility: vi.fn(),
+  formatRuntimeCompatibilityLabel: vi.fn((runtimeCompatibility) => {
+    if (!runtimeCompatibility) {
+      return "Unavailable";
+    }
+    switch (runtimeCompatibility.reason) {
+      case "unsupported_monterey_webkit":
+        return "Unsupported Monterey WebKit";
+      case "supported_monterey_compat_mode":
+        return "Monterey compatibility mode";
+      default:
+        return "Supported";
+    }
+  }),
+}));
+
 const connectWorkspaceMock = vi.mocked(connectWorkspace);
 const getAppBuildTypeMock = vi.mocked(getAppBuildType);
 const getConfigModelMock = vi.mocked(getConfigModel);
@@ -54,11 +76,22 @@ const getExperimentalFeatureListMock = vi.mocked(getExperimentalFeatureList);
 const getAgentsSettingsMock = vi.mocked(getAgentsSettings);
 const isMobileRuntimeMock = vi.mocked(isMobileRuntime);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
+const getCachedRuntimeCompatibilityMock = vi.mocked(getCachedRuntimeCompatibility);
+const loadRuntimeCompatibilityMock = vi.mocked(loadRuntimeCompatibility);
 connectWorkspaceMock.mockResolvedValue(undefined);
 getAppBuildTypeMock.mockResolvedValue("release");
 getConfigModelMock.mockResolvedValue(null);
 isMobileRuntimeMock.mockResolvedValue(false);
 listWorkspacesMock.mockResolvedValue([]);
+getCachedRuntimeCompatibilityMock.mockReturnValue(null);
+loadRuntimeCompatibilityMock.mockResolvedValue({
+  platform: "linux",
+  macosVersion: null,
+  webkitVersion: null,
+  supported: true,
+  reason: "supported",
+  forceReducedTransparency: false,
+});
 getAgentsSettingsMock.mockResolvedValue({
   configPath: "/Users/me/.codex/config.toml",
   multiAgentEnabled: false,
@@ -770,6 +803,26 @@ describe("SettingsView About", () => {
     await waitFor(() => {
       expect(onToggleAutomaticAppUpdateChecks).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("shows Monterey runtime diagnostics when compatibility mode is active", async () => {
+    loadRuntimeCompatibilityMock.mockResolvedValueOnce({
+      platform: "macos",
+      macosVersion: "12.6.8",
+      webkitVersion: "613.1.17",
+      supported: true,
+      reason: "supported_monterey_compat_mode",
+      forceReducedTransparency: true,
+    });
+
+    renderAboutSection();
+
+    expect(await screen.findByText("Monterey compatibility mode")).toBeTruthy();
+    expect(screen.getByText("12.6.8")).toBeTruthy();
+    expect(screen.getByText("613.1.17")).toBeTruthy();
+    expect(
+      screen.getByText(/Monterey is running in stability mode with reduced transparency/i),
+    ).toBeTruthy();
   });
 });
 

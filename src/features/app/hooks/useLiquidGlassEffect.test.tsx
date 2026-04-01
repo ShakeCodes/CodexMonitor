@@ -61,6 +61,25 @@ describe("useLiquidGlassEffect", () => {
     });
   });
 
+  it("only clears native window effects in Monterey compatibility mode", async () => {
+    vi.mocked(isGlassSupported).mockResolvedValue(false);
+    setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 12_6_8)");
+
+    renderHook(() =>
+      useLiquidGlassEffect({
+        reduceTransparency: true,
+        montereyCompatibilityMode: true,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockSetEffects).toHaveBeenCalledWith({ effects: [] });
+    });
+
+    expect(isGlassSupported).not.toHaveBeenCalled();
+    expect(setLiquidGlassEffect).not.toHaveBeenCalled();
+  });
+
   it("applies liquid glass plugin if supported", async () => {
     vi.mocked(isGlassSupported).mockResolvedValue(true);
 

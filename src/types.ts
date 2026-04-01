@@ -63,6 +63,28 @@ export type AppServerEvent = {
   message: Record<string, unknown>;
 };
 
+export type RuntimeCompatibilityReason =
+  | "unsupported_monterey_webkit"
+  | "supported_monterey_compat_mode"
+  | "supported";
+
+export type RuntimePlatform =
+  | "macos"
+  | "windows"
+  | "linux"
+  | "ios"
+  | "android"
+  | "unknown";
+
+export type RuntimeCompatibility = {
+  platform: RuntimePlatform | string;
+  macosVersion: string | null;
+  webkitVersion: string | null;
+  supported: boolean;
+  reason: RuntimeCompatibilityReason;
+  forceReducedTransparency: boolean;
+};
+
 export type TrayRecentThreadEntry = {
   workspaceId: string;
   workspaceLabel: string;

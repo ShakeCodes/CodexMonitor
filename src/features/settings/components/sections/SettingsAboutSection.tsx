@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
-import type { AppSettings } from "@/types";
+import type { AppSettings, RuntimeCompatibility } from "@/types";
 import {
   getAppBuildType,
   isMobileRuntime,
   type AppBuildType,
 } from "@services/tauri";
+import {
+  formatRuntimeCompatibilityLabel,
+  getCachedRuntimeCompatibility,
+  loadRuntimeCompatibility,
+} from "@app/runtimeCompatibility";
 import { useUpdater } from "@/features/update/hooks/useUpdater";
 import {
   SettingsSection,
@@ -36,6 +41,9 @@ export function SettingsAboutSection({
   onToggleAutomaticAppUpdateChecks,
 }: SettingsAboutSectionProps) {
   const [appBuildType, setAppBuildType] = useState<AppBuildType | "unknown">("unknown");
+  const [runtimeCompatibility, setRuntimeCompatibility] = useState<RuntimeCompatibility | null>(
+    () => getCachedRuntimeCompatibility(),
+  );
   const [updaterEnabled, setUpdaterEnabled] = useState(false);
   const { state: updaterState, checkForUpdates, startUpdate } = useUpdater({
     enabled: updaterEnabled,
@@ -57,6 +65,34 @@ export function SettingsAboutSection({
       }
     };
     void loadBuildType();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const cachedRuntimeCompatibility = getCachedRuntimeCompatibility();
+    if (cachedRuntimeCompatibility) {
+      setRuntimeCompatibility(cachedRuntimeCompatibility);
+      return () => {
+        active = false;
+      };
+    }
+
+    const loadCompatibility = async () => {
+      try {
+        const value = await loadRuntimeCompatibility();
+        if (active) {
+          setRuntimeCompatibility(value);
+        }
+      } catch {
+        if (active) {
+          setRuntimeCompatibility(null);
+        }
+      }
+    };
+    void loadCompatibility();
     return () => {
       active = false;
     };
@@ -107,6 +143,27 @@ export function SettingsAboutSection({
         <div className="settings-help">
           Build date: <code>{buildDateLabel}</code>
         </div>
+        <div className="settings-help">
+          Runtime compatibility:{" "}
+          <code>{formatRuntimeCompatibilityLabel(runtimeCompatibility)}</code>
+        </div>
+        {runtimeCompatibility?.platform === "macos" && (
+          <>
+            <div className="settings-help">
+              macOS runtime: <code>{runtimeCompatibility.macosVersion ?? "unknown"}</code>
+            </div>
+            <div className="settings-help">
+              WebKit framework:{" "}
+              <code>{runtimeCompatibility.webkitVersion ?? "unknown"}</code>
+            </div>
+            {runtimeCompatibility.reason === "supported_monterey_compat_mode" && (
+              <div className="settings-help">
+                Monterey is running in stability mode with reduced transparency and
+                glass effects disabled.
+              </div>
+            )}
+          </>
+        )}
       </div>
       <div className="settings-field">
         <div className="settings-label">App Updates</div>
